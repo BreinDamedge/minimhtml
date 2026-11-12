@@ -8,6 +8,7 @@ import (
 	"mime/quotedprintable"
 	"os"
 	"strings"
+	"sync"
 )
 
 type MultipartSegment struct {
@@ -18,7 +19,29 @@ type MultipartSegment struct {
 	Content          string
 }
 
+func MakeURI(segment *MultipartSegment) (string, error) {
+	// assumes content is already decoded to utf-8 and is base64 encoded text
+	return fmt.Sprintf("data:%s;charset=utf-8;base64,%s", segment.Type, segment.Content), nil
+}
+
+func decodeMultipartContent(segment *MultipartSegment) error {
+	if segment.TransferEncoding == "quoted-printable" {
+		r := quotedprintable.NewReader(strings.NewReader(segment.Content))
+		decoded, err := io.ReadAll(r)
+		if err != nil {
+			return err
+		}
+		segment.Content = string(decoded)
+	} else if segment.TransferEncoding == "base64" {
+		replacer := strings.NewReplacer("\r\n", "", "\n", "")
+		clean := replacer.Replace(segment.Content)
+		segment.Content = clean
+	}
+	return nil
+}
+
 func main() {
+
 	// open the file
 	file, err := os.Open("example_doc.mht")
 	if err != nil {
@@ -41,8 +64,8 @@ func main() {
 	}
 
 	// make a place to store info & data of sections you find while parsing
-	var documentSections []MultipartSegment = []MultipartSegment{}
-
+	var documentSections []*MultipartSegment = []*MultipartSegment{}
+	var wg sync.WaitGroup // for goroutining the decoding of the html segment
 	// now collect the sections
 	for {
 		// you've hit a new section or the end of the file so make a new MultipartSegment to keep track of this info just in case
@@ -57,9 +80,12 @@ func main() {
 				break
 			} else {
 				// parse headers
-				parts := strings.Split(line, ":")
-				header := strings.TrimSpace(parts[0])
-				value := strings.TrimSpace(parts[1])
+				header, value, found := strings.Cut(line, ":")
+				if !found {
+					// raise an error here
+				}
+				header = strings.TrimSpace(header)
+				value = strings.TrimSpace(value)
 				switch header {
 				case "Content-Type":
 					section.Type = value
@@ -87,7 +113,10 @@ func main() {
 			if line == sep { // if you hit the separator you've reached a new section
 				// put this section into the list and start on the next segment
 				section.Content = br.String()
-				documentSections = append(documentSections, section)
+				documentSections = append(documentSections, &section)
+				wg.Go(func() {
+					decodeMultipartContent(&section)
+				})
 				break
 			} else {
 				// consume body
@@ -105,10 +134,29 @@ func main() {
 	if len(documentSections) == 0 {
 		log.Fatal(fmt.Errorf("documentSections cannot be empty: length is %d\n", len(documentSections)))
 	}
-	r := quotedprintable.NewReader(strings.NewReader(documentSections[0].Content))
-	decoded, err := io.ReadAll(r)
 
-	err = os.WriteFile("example_doc.html", []byte(decoded), 0644)
+	// wait for segments to be decoded so you can make the uris (for old new pairs)
+	// TODO: you might be able to redo this with decoded flags so that you don't have to wait for just the last one to be done or smth.
+	wg.Wait()
+
+	// for each link in the html find it and replace it
+	// use a replacer lol
+	// make the uris and pair them with the original links
+	oldNews := []string{}
+	for _, segment := range documentSections {
+		if segment.Type == "image/png" {
+			oldNews = append(oldNews, segment.Location)
+			uri, err := MakeURI(segment)
+			if err != nil {
+				log.Fatal(err)
+			}
+			oldNews = append(oldNews, uri)
+		}
+	}
+	r := strings.NewReplacer(oldNews...)
+	new_content := r.Replace(documentSections[0].Content)
+
+	err = os.WriteFile("example_doc.html", []byte(new_content), 0644)
 	if err != nil {
 		log.Fatal(err)
 	}

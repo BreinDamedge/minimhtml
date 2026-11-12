@@ -151,3 +151,30 @@ we're going to do it poorly today and test how slow it is.
   1. plop the blob into memory
 1. write the html to a new file (no image or css replacement yet)
 
+okay I'm being silly but trying to use a goroutine to decode the text data in the html section while the reader reads the rest of the file. my wait group wait might not be waiting tho. tho it certainly is.
+one thing that could be happening is that when I append to the slice the slice gets reallocated and the thread is working on the old memory? let me check. Yep. balls. okay, well, you could make it a slice of pointers then. might end up being slower but just go ahead and do that.
+
+So the problem was, I'd add the struct to the slice and start a goroutine to decode the content in that MultipartSegment. After that goroutine started but before the write completed, stuff gets appended to that slice, but if the slice isn't big enough, it'll make a copy of itself in a new location. When that happens it doesn't tell the goroutine that it moved the memory it was working on before so the work was still getting done, but it was getting done on an area of memory that the program no longer cared about. I fixed the issue by making the list of MultipartSegments a list of pointers to multipartSegments so that when I give it the pointer to the first one and the slice get's reallocated, I don't have to worry about the data getting changed.
+
+swapped from using waitgroup to using a done flag on the data. Not sure if I'm waiting efficiently (probably not since I'm waiting with an empty for loop. I'll change it when this is parsing more than one doc).
+
+# Efficiently Replacing Strings
+So, we have a set of strings to look for and if we need to see which one we encounter first.
+why?
+
+We have the html data as a string and to replace the links, we'll just copy it to a new buffer in chunks. chunk it like beginning:first-link-start, then add the modified link, then add more data starting at the end of the link. hey we could use the go string replacer actually.
+
+```go
+// replace links
+// get all the links you need to replace
+// as you do this decode the content of the non-html multipartSegments so their content is ready before you find links
+// before using the content of the associated segment, check the Decoded flag on the segment
+```
+
+...
+
+
+okay it looks like the replacement isn't quite working one sec. I think what's happening is it's replacing sub urls that don't lead to an image.
+oh. when I collect the headers I split the lines on all `:` character's instead of only splitting on the first one.
+
+hey it works! next up is css. it can parse the test document 1000 times in 2.2 seconds which isn't too bad. not great, but decent.
