@@ -1,3 +1,3 @@
-module minimhtml.com/m/v2
+module github.com/breindamedge/minimhtml
 
 go 1.27.1

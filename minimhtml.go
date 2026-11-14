@@ -69,12 +69,12 @@ func decodeMultipartContent(segment *MultipartSegment) error {
 	return nil
 }
 
-func Mht2Html(src string, dst string) error {
+func Mht2Html(src string) (string, error) {
 
 	// open the file
 	file, err := os.Open(src)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer file.Close()
 
@@ -163,7 +163,7 @@ func Mht2Html(src string, dst string) error {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return err
+		return "", err
 	}
 
 	// write the content of the html blob into an html file
@@ -184,7 +184,7 @@ func Mht2Html(src string, dst string) error {
 			oldNews = append(oldNews, segment.Location)
 			uri, err := MakeURI(segment)
 			if err != nil {
-				return err
+				return "", err
 			}
 			oldNews = append(oldNews, uri)
 		}
@@ -193,10 +193,5 @@ func Mht2Html(src string, dst string) error {
 	r := strings.NewReplacer(oldNews...)
 	new_content := r.Replace(documentSections[0].Content)
 
-	err = os.WriteFile(dst, []byte(new_content), 0644)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return new_content, nil
 }
