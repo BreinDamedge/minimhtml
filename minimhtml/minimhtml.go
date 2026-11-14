@@ -94,20 +94,23 @@ func Mht2Html(src string, dst string) error {
 
 	// make a place to store info & data of sections you find while parsing
 	var documentSections []*MultipartSegment = []*MultipartSegment{}
-	var wg sync.WaitGroup // for goroutining the decoding of the html segment
+	var wg sync.WaitGroup // for goroutining the decoding of the html segment  TODO: consider instead using a "decoded" flag so that you don't actually do any waiting for a piece of data unless you're trying to use it.
+	// the final boundary of a multipart body is the boundary line followed by "--" (RFC 2046),
+	// so both forms have to be treated as section delimiters
+	finalSep := sep + "--"
+
 	// now collect the sections
 	for {
 		// you've hit a new section or the end of the file so make a new MultipartSegment to keep track of this info just in case
 		section := MultipartSegment{}
-		done := true
+		sawHeader := false
 		// figure out what type of chunk this is (read the headers)
 		for scanner.Scan() {
-			// if scan succeeds set done to false
-			done = false
 			line := scanner.Text()
 			if line == "" { // if you hit an empty line under headers then you're about to hit content so stop the header reading
 				break
 			} else {
+				sawHeader = true
 				// parse headers
 				header, value, found := strings.Cut(line, ":")
 				if !found {
@@ -130,36 +133,33 @@ func Mht2Html(src string, dst string) error {
 			}
 		}
 
-		// read the content of the section
+		// NOTE:
+		// no more sections (we hit EOF while looking for headers)
+		// if there were no more sections, the header-reading loop will have
+		// hit EOF, sawHeader will stay false, and we break the outer loop
+		if !sawHeader {
+			break
+		}
+
+		// read the content of the section until a boundary (or EOF, for the last segment)
 		var br strings.Builder
 		for scanner.Scan() {
 			line := scanner.Text()
-			if line == sep { // if you hit the separator you've reached a new section
-				// put this section into the list and start on the next segment
-				section.Content = br.String()
-				documentSections = append(documentSections, &section)
-				wg.Go(func() {
-					decodeMultipartContent(&section)
-				})
+			if line == sep || line == finalSep { // if you hit the separator you've reached a new section or the end of the body
 				break
-			} else {
-				// consume body
-				br.WriteString(line)
-				br.WriteString("\n") // add the newline back since the scanner removes it
 			}
+			// consume body
+			br.WriteString(line)
+			br.WriteString("\n") // add the newline back since the scanner removes it
 		}
 
-		// if read failed, done will be false
-		if done {
-			if section.Type != "" && section.Content == "" { // if there is a section that has been populated but hasn't been added to the thing?
-				section.Content = br.String()
-				documentSections = append(documentSections, &section)
-				wg.Go(func() {
-					decodeMultipartContent(&section)
-				})
-			}
-			break
-		}
+		// put this section into the list and start on the next segment
+		// (this also catches the last segment, which ends at EOF instead of a separator)
+		section.Content = br.String()
+		documentSections = append(documentSections, &section)
+		wg.Go(func() {
+			decodeMultipartContent(&section)
+		})
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -172,16 +172,14 @@ func Mht2Html(src string, dst string) error {
 	}
 
 	// wait for segments to be decoded so you can make the uris (for old new pairs)
-	// TODO: you might be able to redo this with decoded flags so that you don't have to wait for just the last one to be done or smth.
+	// TODO: you might be able to redo this with decoded flags so that you don't have to wait for just the last one to be done or smth when you're not trying to use that section yet.
 	wg.Wait()
 
 	// for each link in the html find it and replace it
 	// use a replacer lol
 	// make the uris and pair them with the original links
 	oldNews := []string{}
-	fmt.Println("checked:")
 	for _, segment := range documentSections {
-		fmt.Println(segment.Type, segment.Location)
 		if segment.Type == "image/png" || segment.Type == "text/css" {
 			oldNews = append(oldNews, segment.Location)
 			uri, err := MakeURI(segment)
@@ -189,14 +187,6 @@ func Mht2Html(src string, dst string) error {
 				return err
 			}
 			oldNews = append(oldNews, uri)
-		}
-	}
-
-	//debug print
-	fmt.Println("replaced:")
-	for i, v := range oldNews {
-		if i%2 == 0 {
-			fmt.Println(v)
 		}
 	}
 
