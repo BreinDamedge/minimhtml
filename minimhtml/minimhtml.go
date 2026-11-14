@@ -1,7 +1,8 @@
-package main
+package minimhtml
 
 import (
 	"bufio"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -19,9 +20,37 @@ type MultipartSegment struct {
 	Content          string
 }
 
+func base64Encode(segment *MultipartSegment) (string, error) {
+	switch segment.TransferEncoding {
+	case "base64":
+		return segment.Content, nil
+	case "quoted-printable":
+		r := quotedprintable.NewReader(strings.NewReader(segment.Content))
+		decoded, err := io.ReadAll(r)
+		if err != nil {
+			return "", err
+		}
+		encoded := base64.StdEncoding.EncodeToString([]byte(decoded))
+		return encoded, nil
+	default:
+		return "", fmt.Errorf("Unsupported Transfer-Encoding: %s\n", segment.TransferEncoding)
+	}
+}
+
 func MakeURI(segment *MultipartSegment) (string, error) {
-	// assumes content is already decoded to utf-8 and is base64 encoded text
-	return fmt.Sprintf("data:%s;charset=utf-8;base64,%s", segment.Type, segment.Content), nil
+	switch segment.Type {
+	case "image/png":
+		// assumes content is already decoded from quoted-printable and is base64 encoded text
+		return fmt.Sprintf("data:%s;charset=utf-8;base64,%s", segment.Type, segment.Content), nil
+	case "text/css":
+		b64Payload, err := base64Encode(segment)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("data:%s;charset=utf-8;base64,%s", segment.Type, b64Payload), nil
+	default:
+		return "", fmt.Errorf("Unsupported Content-Type for URI: %s\n", segment.Type)
+	}
 }
 
 func decodeMultipartContent(segment *MultipartSegment) error {
@@ -40,12 +69,12 @@ func decodeMultipartContent(segment *MultipartSegment) error {
 	return nil
 }
 
-func main() {
+func Mht2Html(src string, dst string) error {
 
 	// open the file
-	file, err := os.Open("example_doc.mht")
+	file, err := os.Open(src)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer file.Close()
 
@@ -101,11 +130,6 @@ func main() {
 			}
 		}
 
-		// if read failed, done will be false
-		if done {
-			break
-		}
-
 		// read the content of the section
 		var br strings.Builder
 		for scanner.Scan() {
@@ -124,10 +148,22 @@ func main() {
 				br.WriteString("\n") // add the newline back since the scanner removes it
 			}
 		}
+
+		// if read failed, done will be false
+		if done {
+			if section.Type != "" && section.Content == "" { // if there is a section that has been populated but hasn't been added to the thing?
+				section.Content = br.String()
+				documentSections = append(documentSections, &section)
+				wg.Go(func() {
+					decodeMultipartContent(&section)
+				})
+			}
+			break
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	// write the content of the html blob into an html file
@@ -143,21 +179,34 @@ func main() {
 	// use a replacer lol
 	// make the uris and pair them with the original links
 	oldNews := []string{}
+	fmt.Println("checked:")
 	for _, segment := range documentSections {
-		if segment.Type == "image/png" {
+		fmt.Println(segment.Type, segment.Location)
+		if segment.Type == "image/png" || segment.Type == "text/css" {
 			oldNews = append(oldNews, segment.Location)
 			uri, err := MakeURI(segment)
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 			oldNews = append(oldNews, uri)
 		}
 	}
+
+	//debug print
+	fmt.Println("replaced:")
+	for i, v := range oldNews {
+		if i%2 == 0 {
+			fmt.Println(v)
+		}
+	}
+
 	r := strings.NewReplacer(oldNews...)
 	new_content := r.Replace(documentSections[0].Content)
 
-	err = os.WriteFile("example_doc.html", []byte(new_content), 0644)
+	err = os.WriteFile(dst, []byte(new_content), 0644)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+
+	return nil
 }
