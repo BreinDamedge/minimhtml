@@ -17,16 +17,22 @@ func main() {
 		panic(err)
 	}
 
-	numFiles := len(doc_paths)
 	fileBuffers := [][]byte{}
 	for i := range doc_paths {
-		buff, err := os.ReadFile(TEST_DIRECTORY + "/" + doc_paths[i].Name())
+		// ignore non-mht files
+		path := TEST_DIRECTORY + "/" + doc_paths[i].Name()
+		if path[len(path)-3:] != "mht" { // check file extention
+			continue
+		}
+
+		buff, err := os.ReadFile(path)
 		if err != nil {
 			panic(err)
 		}
 		fileBuffers = append(fileBuffers, buff)
 	}
 
+	numFiles := len(fileBuffers)
 	// begin parsing
 	start := time.Now() // Start time
 	for range 1000 {

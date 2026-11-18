@@ -192,14 +192,14 @@ I think asking for it to be under a certain time while testing on 2 different cp
 make it work for now and then if it needs speeding up, then speed it up.
 
 Don't Work:
-- [ ] TestDocuments/0a58dffe-8862-4cee-a15e-5914ab37b77a.mht
-  * black white screen
+- [ ] TestDocuments/0b7cf799-7231-4762-9b68-4e2a2dda967f.mht
+  * missing image
 - [ ] TestDocuments/0aaeaa22-e02e-47e6-8398-72fa6748a8de.mht
   * missing image at the bottom
 - [ ] TestDocuments/0b7080ca-e5c5-4a6e-91dd-160034c892f2.mht
   * blank white
-- [ ] TestDocuments/0b7cf799-7231-4762-9b68-4e2a2dda967f.mht
-  * missing image
+- [ ] TestDocuments/0a58dffe-8862-4cee-a15e-5914ab37b77a.mht
+  * white screen
 - [ ] TestDocuments/0be22327-ca29-4c20-9ca5-f92aa1a698ee.mht
   * white screen
 - [ ] TestDocuments/0c296bf7-4b65-40e0-bba6-a55e7d7c02e4.mht
@@ -208,3 +208,66 @@ Don't Work:
   * white screen
 - [ ] TestDocuments/0ca632e9-13ff-4282-a769-3862676eeed4.mht
   * white screen
+
+let's tackle the blank white screen issue first.
+so all the blank documents seem to be
+```html
+<html>
+  <head></head>
+  <body></body>
+</html>
+```
+when renderered in the browser.
+which isnt' a document :\  
+
+ah so the file outputs are blank. and I had an unchecked error! let's run it again and look for panics.
+
+```
+Unknown header: <link rel="preload stylesheet" href="data
+./TestDocuments/00dcb2b4-bc13-4ffb-b046-c7b7f8e48063.html
+panic: bufio.Scanner: token too long
+
+goroutine 1 [running]:
+main.main()
+        C:/Users/jacob/OneDrive/Documents/minimhtml/cmd/parse/parse.go:23 +0x1c5
+exit status 2
+```
+
+rad.
+okay so looking at this unknown header (can't search it btw it seems) I'm wondering if- wait. look at the current file it was working on. that's not mht. lemme fix that.
+k, fixed that and it does still crash.
+
+```
+./TestDocuments/0a58dffe-8862-4cee-a15e-5914ab37b77a.mht
+panic: bufio: buffer full
+
+goroutine 1 [running]:
+main.main()
+        C:/Users/jacob/OneDrive/Documents/minimhtml/cmd/parse/parse.go:27 +0x245
+exit status 2
+```
+
+I think these errors are actually from the buffer reads. So the parser probbably works. lets test it by scanning them all from disk once.
+
+nvm that's not it, because these aren't doing buffer reads.
+[Go Optimization Guide](https://goperf.dev/01-common-patterns/buffered-io/)
+
+```
+// go documentation for scanner.Buffer:
+Buffer controls memory allocation by the Scanner. It sets the initial buffer to use when scanning and the maximum size of buffer that may be allocated during scanning. The contents of the buffer are ignored.
+
+The maximum token size must be less than the larger of max and cap(buf). If max <= cap(buf), Scanner.Scan will use this buffer only and do no allocation.
+
+By default, Scanner.Scan uses an internal buffer and sets the maximum token size to MaxScanTokenSize.
+
+Buffer panics if it is called after scanning has started.
+```
+
+okay so... hrmmmmm. I'm getting buffer full error even if the scanner's buffer is 4 gigs. What other causes might there be?
+
+k so that wasn't the buffer that was too big, it's actually the uri. I'm going to make those bigger and see if  that fixes it. The alternative is doing url replacement with urls that point back to miniwoofer, and then having miniwoofer keep references to each static resource it ingests, and then having a big library of content (which is almost inarguably a better solution, the only reason to not do it right now is that it requires some reworking of the webserver, and maintenances of one or two more indexes to keep track of the original urls, remapped urls/uuids, and the blobs that are the content (or the location of the mhtml file to extract the blob from)).
+
+okay! so the buffer full error came from segments having their content decoded to plain text (utf-8? what are they decoded to?) and then read into base64 encode again but they're still marked as quoted-printable so they try to get read line by line into a tiny buffer designed for quoted-printable lines but then they aren't quoted-printable lines. I fixed that issue by changing the TransferEncoding value to `"text/plain"` on segments who's content has been decoded. That might not be a valid transfer encoding but oh well it works.
+
+New Issues:
+- [ ] latex in MAT 357 document has some busted LaTeX with some unknown characters but is otherwise okay it seems. No errors at least. Next up is to check for other errors ig.

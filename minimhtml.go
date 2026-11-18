@@ -29,9 +29,13 @@ func base64Encode(segment *MultipartSegment) (string, error) {
 		r := quotedprintable.NewReader(strings.NewReader(segment.Content))
 		decoded, err := io.ReadAll(r)
 		if err != nil {
+			fmt.Printf("error in base64 encode: %s\n", err)
 			return "", err
 		}
 		encoded := base64.StdEncoding.EncodeToString([]byte(decoded))
+		return encoded, nil
+	case "text/plain":
+		encoded := base64.StdEncoding.EncodeToString([]byte(segment.Content))
 		return encoded, nil
 	default:
 		return "", fmt.Errorf("Unsupported Transfer-Encoding: %s\n", segment.TransferEncoding)
@@ -62,6 +66,7 @@ func decodeMultipartContent(segment *MultipartSegment) error {
 			return err
 		}
 		segment.Content = string(decoded)
+		segment.TransferEncoding = "text/plain" // This probably isn't a real transfer encoding, but that's fine, it just means we know it's been touched by the program.
 	} else if segment.TransferEncoding == "base64" {
 		replacer := strings.NewReplacer("\r\n", "", "\n", "")
 		clean := replacer.Replace(segment.Content)
@@ -75,8 +80,17 @@ func ReaderMht2Html(reader io.Reader) (string, error) {
 	sep_prefix := "------MultipartBoundary--"
 	var sep string
 
-	// start reading and find the separator
+	// setup scanner for reading
 	scanner := bufio.NewScanner(reader)
+	// set the scanner buffer size to 256kb to resolve the buffer too big error
+	// NOTE: Consider handling a buffer full error by trying again with a larger
+	// buffer as a more robust solution. Also consider doing some data analysis
+	// to find the expected scan size so you rarely hit this bug.
+	const startCapacity = 64 * 1024 // 64kb
+	const maxCapacity = 256 * 1024  // 256kb
+	scanner.Buffer(make([]byte, startCapacity), maxCapacity)
+
+	// start reading and find the separator
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, sep_prefix) {
@@ -177,6 +191,7 @@ func ReaderMht2Html(reader io.Reader) (string, error) {
 			oldNews = append(oldNews, segment.Location)
 			uri, err := MakeURI(segment)
 			if err != nil {
+				fmt.Printf("broke in uri replacement: %s\n", err)
 				return "", err
 			}
 			oldNews = append(oldNews, uri)
