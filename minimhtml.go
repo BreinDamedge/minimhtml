@@ -2,6 +2,7 @@ package minimhtml
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -69,21 +70,13 @@ func decodeMultipartContent(segment *MultipartSegment) error {
 	return nil
 }
 
-func Mht2Html(src string) (string, error) {
-
-	// open the file
-	file, err := os.Open(src)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
+func ReaderMht2Html(reader io.Reader) (string, error) {
 	// setup stuff for identifying the separator
 	sep_prefix := "------MultipartBoundary--"
 	var sep string
 
 	// start reading and find the separator
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, sep_prefix) {
@@ -194,4 +187,21 @@ func Mht2Html(src string) (string, error) {
 	new_content := r.Replace(documentSections[0].Content)
 
 	return new_content, nil
+
+}
+
+func Mht2Html(src string) (string, error) {
+
+	// open the file
+	file, err := os.Open(src)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	return ReaderMht2Html(file)
+}
+
+func BuffMht2Html(buff []byte) (string, error) {
+	return ReaderMht2Html(bytes.NewReader(buff))
 }

@@ -178,3 +178,33 @@ okay it looks like the replacement isn't quite working one sec. I think what's h
 oh. when I collect the headers I split the lines on all `:` character's instead of only splitting on the first one.
 
 hey it works! next up is css. it can parse the test document 1000 times in 2.2 seconds which isn't too bad. not great, but decent.
+
+added css and now the 1000 trials takes 2.9 seconds which feels less okay.
+
+I'll bring in more test documents.
+
+how do you concatenate strings in go? literally plus dude
+
+yiiiiiiiiiiiiiiikes dude on this test corpus 1000 files takes 11 seconds. *yuck*
+
+k I sped it up by reading from buffers instead of disk everytime but the parsing from mhtml to html with all the uri replacements. it takes about 6.2ms.
+I think asking for it to be under a certain time while testing on 2 different cpus might not be a silly target.
+make it work for now and then if it needs speeding up, then speed it up.
+
+Don't Work:
+- [ ] TestDocuments/0a58dffe-8862-4cee-a15e-5914ab37b77a.mht
+  * black white screen
+- [ ] TestDocuments/0aaeaa22-e02e-47e6-8398-72fa6748a8de.mht
+  * missing image at the bottom
+- [ ] TestDocuments/0b7080ca-e5c5-4a6e-91dd-160034c892f2.mht
+  * blank white
+- [ ] TestDocuments/0b7cf799-7231-4762-9b68-4e2a2dda967f.mht
+  * missing image
+- [ ] TestDocuments/0be22327-ca29-4c20-9ca5-f92aa1a698ee.mht
+  * white screen
+- [ ] TestDocuments/0c296bf7-4b65-40e0-bba6-a55e7d7c02e4.mht
+  * white screen
+- [ ] TestDocuments/0c8c6cd3-43d5-4a70-9351-652a1d2946ef.mht
+  * white screen
+- [ ] TestDocuments/0ca632e9-13ff-4282-a769-3862676eeed4.mht
+  * white screen
