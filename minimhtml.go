@@ -220,3 +220,63 @@ func Mht2Html(src string) (string, error) {
 func BuffMht2Html(buff []byte) (string, error) {
 	return ReaderMht2Html(bytes.NewReader(buff))
 }
+
+func ExtractLocations(reader io.Reader) ([]string, error) {
+	// given a reader on mhtml data, extract the content locations of all segments
+	// identify the separator
+	sep_prefix := "------MultipartBoundary--"
+	var sep string
+	scanner := bufio.NewScanner(reader)
+
+	// start reading and find the separator
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, sep_prefix) {
+			sep = line
+			break
+		}
+	}
+	finalSep := sep + "--"
+
+	// collect location header from each segment
+	locations := []string{}
+	for {
+		// you've hit a new section or the end of the file so make a new MultipartSegment to keep track of this info just in case
+		sawHeader := false
+		// figure out what type of chunk this is (read the headers)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "" { // if you hit an empty line under headers then you're about to hit content so stop the header reading
+				break
+			} else {
+				sawHeader = true
+				// parse headers
+				header, value, found := strings.Cut(line, ":")
+				if !found {
+					// raise an error here
+					return nil, fmt.Errorf("Malformed header: %s\n", line)
+				}
+				header = strings.TrimSpace(header)
+				value = strings.TrimSpace(value)
+				if header == "Content-Location" {
+					locations = append(locations, value)
+					// then break and read until you find the final separator
+					break
+				}
+			}
+		}
+		// break if it's done
+		if !sawHeader {
+			break
+		}
+
+		//read till you find the next section
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == sep || line == finalSep { // if you hit the separator you've reached a new section or the end of the body
+				break
+			}
+		}
+	}
+	return locations, nil
+}

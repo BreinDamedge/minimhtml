@@ -271,3 +271,7 @@ okay! so the buffer full error came from segments having their content decoded t
 
 New Issues:
 - [ ] latex in MAT 357 document has some busted LaTeX with some unknown characters but is otherwise okay it seems. No errors at least. Next up is to check for other errors ig.
+
+I just made the extract locations example which extracts all the segment locations from an mhtml doc and there are soooo many. It would almost certainly be worth extracting them and splitting the data up into organized files for organization purposes at least. The URIs will shrink down the document transfers which will probably be best for speed of this program but you could do so much for recommendation based on the information you get from all the links. mainly grouping of content naturally with a hierarchy. This doesn't even extract outlinks from content yet.
+
+Iiiiii need to also rework the parser again because unfortunately there can be more than one html section in an mhtml document.
