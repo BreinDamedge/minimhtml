@@ -278,5 +278,11 @@ func ExtractLocations(reader io.Reader) ([]string, error) {
 			}
 		}
 	}
+
+	// check if the scanner failed
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
 	return locations, nil
 }

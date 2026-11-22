@@ -275,3 +275,44 @@ New Issues:
 I just made the extract locations example which extracts all the segment locations from an mhtml doc and there are soooo many. It would almost certainly be worth extracting them and splitting the data up into organized files for organization purposes at least. The URIs will shrink down the document transfers which will probably be best for speed of this program but you could do so much for recommendation based on the information you get from all the links. mainly grouping of content naturally with a hierarchy. This doesn't even extract outlinks from content yet.
 
 Iiiiii need to also rework the parser again because unfortunately there can be more than one html section in an mhtml document.
+
+k the wikipedia page (./TestDocuments/0be22327-ca29-4c20-9ca5-f92aa1a698ee.html) has broken images and missing css and all sorts.
+
+[rfc2557 (Mime Encapsulation of Aggregate Documents)](https://www.rfc-editor.org/rfc/rfc2557.html)
+- [ ] support multiple text/html segments in a document. since ig that's allowed.
+- [ ] separate resources
+- [ ] gotta learn how to handle `cid:` 
+
+k so let's real quick take a moment and brainstorm links and all that for miniwoofer documents because we need to figure out what we need to extract from the documents.
+
+I should keep an index with document ids (uuids) and pair them with their resources
+
+something like:
+```json
+"UUID12345.mht" : {
+  "Location" : "https://yuppers.that/is/a-website.html",
+  "Resources" : ["https://this.is/also/a-website.png", ...],
+  "Outlinks" : ["www.outlink.gov", ...]
+}
+```
+
+thoughts? well, that'd sorta work, but now it'd be nice to know what resources the outlinks map to. so if there's a way to include that it'd be good. outlinks is really more of a member of html resources. you could store them in the resources thing
+```json
+"UUID12345.mht" : {
+  "Location" : "https://yuppers.that/is/a-website.html",
+  "Resources" : [{"type" : "image/png", "Location" : "https://this.is/also/a-website/but/it/is-an-image.png"},
+               {"type" : "text/html", "Location" : "https://this.is/also/a-website.html", "Outlinks" : [...]},
+              ]
+}
+```
+
+the only problem there becomes indexing alllll of this now. Ig you could leave that to sqlite then. actually start using it lol. It's either that or you start making some crazy datastructures that are constant time lookups in both directions. graph type beat.
+
+mmmm sqlite doesn't index on anything other than keys hrm. might need to make a bunch of indexes then.
+
+okay, if I keep a map that maps UUID <-> URL, then I can check for both existence of both. So UUID should map to it's root location (like the multipart/related url) and then urls should map to the UUID (mht) document in which they exist. that way it works for images and stuff.
+
+so you have:
+UUID -> baseURL
+URL(any) -> UUID (document that contains that data. may be segment, may be full doc)
+UUID -> Resources (Resources contain their location & their type. if you need the content, you parse it from an mhtml document)
